@@ -16,8 +16,8 @@ do
   output=$(./chutney verify networks/hs)
   # Check if chutney output included 'Transmission: Success'.
   if [[ $output == *"Transmission: Success"* ]]; then
-    hs_address=$(echo $output | grep -Po "([a-z2-7]{16}.onion:\d{2,5})")
-    client_address=$(echo $output | grep -Po -m 1 "(localhost:\d{2,5})" | head -n1)
+    hs_address=$(echo $output | ggrep -Po "([a-z2-7]{16}.onion:\d{2,5})")
+    client_address=$(echo $output | ggrep -Po -m 1 "(localhost:\d{2,5})" | head -n1)
     echo "HS system running with service available at $hs_address"
     export CHUTNEY_ONION_ADDRESS="$hs_address"
     export CHUTNEY_CLIENT_PORT="$client_address"

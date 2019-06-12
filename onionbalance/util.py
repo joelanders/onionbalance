@@ -11,6 +11,9 @@ import time
 
 # import Crypto.Util
 import Crypto.PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding
+from cryptography.hazmat.primitives.serialization import PublicFormat
 
 from onionbalance import config
 
@@ -43,8 +46,13 @@ def calc_permanent_id(rsa_key):
     return calc_key_digest(rsa_key)[:10]
 
 
-def calc_onion_address(rsa_key):
-    return base64.b32encode(calc_permanent_id(rsa_key)).decode().lower()
+def calc_onion_address(key):
+    if isinstance(key, Ed25519PrivateKey):
+        pub_key = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        checksum = hashlib.sha3_256(b".onion checksum" + pub_key + b'\x03').digest()[:2]
+        address = base32_encode_str(pub_key + checksum + b'\x03')
+        return address
+    return base64.b32encode(calc_permanent_id(key)).decode().lower()
 
 
 def calc_descriptor_id(permanent_id, secret_id_part):
@@ -120,9 +128,13 @@ def key_decrypt_prompt(key_file, retries=3):
     """
 
     key_passphrase = None
-    with open(key_file, 'rt') as handle:
+    with open(key_file, 'rb') as handle:
         pem_key = handle.read()
+        hsv3_tag = b"== ed25519v1-secret: type0 =="
+        if pem_key.startswith(hsv3_tag):
+            return Ed25519PrivateKey.from_private_bytes(pem_key[32:64])
 
+        pem_key = pem_key.decode('utf-8')
         for retries in range(0, retries):
             if "Proc-Type: 4,ENCRYPTED" in pem_key:  # Key looks encrypted
                 key_passphrase = getpass.getpass(

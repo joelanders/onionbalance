@@ -6,11 +6,19 @@ import io
 import sys
 
 import Crypto.PublicKey.RSA
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import pytest
 from .util import builtin
 
 from onionbalance.util import *
+
+ED25519_SECRET_KEY = b''.join([
+    b"== ed25519v1-secret: type0 ==\x00\x00\x00\xd0d\xe96\x10\xbb",
+    b"\x96u`\xd21u\xe7\xe9\xc2I\t\x8a\xd4\x0e\xdc\x94(\xcb\xd7\xde",
+    b"\xf7\xac0E[YyY\xf5\xbcU\xba \x04\x06\x134\xf91\x8e(\xa3\xf4",
+    b"\xa4,\xba\x01a\xbb\x96_,\x8b\xe4b|\x0b\xad",
+])
 
 
 PEM_PRIVATE_KEY = u'\n'.join([
@@ -118,6 +126,17 @@ def test_calc_onion_address():
     assert calc_onion_address(PRIVATE_KEY) == u'jyvfq5umznvka34v'
 
 
+def test_calc_onion_address_hsv3():
+    key = Ed25519PrivateKey.from_private_bytes(ED25519_SECRET_KEY[32:64])  # XXX guess
+    assert calc_onion_address(key) == u'd2gtlwwcxmkpdin2d3ya5gsjccmqwbscavxj7bcyfukeduyxwka7zvid'
+
+def test_calc_fucking_onion_address_hsv3():
+    pub_key = b'\x1e\x8d5\xda\xc2\xbb\x14\xf1\xa1\xba\x1e\xf0\x0e\x9aI\x10\x99\x0b\x06B\x05n\x9f\x84X-\x14A\xd3\x17\xb2\x81'
+    checksum = hashlib.sha3_256(b".onion checksum" + pub_key + b'\x03').digest()[:2]
+    address = base32_encode_str(pub_key + checksum + b'\x03')
+    assert address == u'd2gtlwwcxmkpdin2d3ya5gsjccmqwbscavxj7bcyfukeduyxwka7zvid'
+
+
 def test_get_time_period():
     time_period = get_time_period(
         time=UNIX_TIMESTAMP,
@@ -220,24 +239,31 @@ def test_base32_encode_str_not_byte_string():
 
 def test_key_decrypt_prompt(mocker):
     # Valid private PEM key
-    mocker.patch(builtin('open'), lambda *_: io.StringIO(PEM_PRIVATE_KEY))
+    mocker.patch(builtin('open'), lambda *_: io.BytesIO(PEM_PRIVATE_KEY.encode('utf-8')))
     key = key_decrypt_prompt('private.key')
     assert isinstance(key, Crypto.PublicKey.RSA._RSAobj)
     assert key.has_private()
 
 
+def test_key_decrypt_prompt_hsv3(mocker):
+    # Valid secret ed25519 key
+    mocker.patch(builtin('open'), lambda *_: io.BytesIO(ED25519_SECRET_KEY))
+    key = key_decrypt_prompt('private.key')
+    assert isinstance(key, Ed25519PrivateKey)
+
+
 def test_key_decrypt_prompt_public_key(mocker):
     # Valid public PEM key
-    private_key = Crypto.PublicKey.RSA.importKey(PEM_PRIVATE_KEY)
+    private_key = Crypto.PublicKey.RSA.importKey(PEM_PRIVATE_KEY.encode('utf-8'))
     pem_public_key = private_key.publickey().exportKey().decode('utf-8')
-    mocker.patch(builtin('open'), lambda *_: io.StringIO(pem_public_key))
+    mocker.patch(builtin('open'), lambda *_: io.BytesIO(pem_public_key.encode('utf-8')))
 
     with pytest.raises(ValueError):
         key_decrypt_prompt('public.key')
 
 
 def test_key_decrypt_prompt_malformed_key(mocker):
-    mocker.patch(builtin('open'), lambda *_: io.StringIO(PEM_INVALID_KEY))
+    mocker.patch(builtin('open'), lambda *_: io.BytesIO(PEM_INVALID_KEY.encode('utf-8')))
     with pytest.raises(ValueError):
         key_decrypt_prompt('private.key')
 
@@ -246,13 +272,13 @@ def test_key_decrypt_prompt_incorrect_size(mocker):
     # Key which is not 1024 bits
     private_key_1280 = Crypto.PublicKey.RSA.generate(1280)
     pem_key_1280 = private_key_1280.exportKey().decode('utf-8')
-    mocker.patch(builtin('open'), lambda *_: io.StringIO(pem_key_1280))
+    mocker.patch(builtin('open'), lambda *_: io.BytesIO(pem_key_1280.encode('utf-8')))
     with pytest.raises(ValueError):
         key_decrypt_prompt('512-bit-private.key')
 
 
 def test_key_decrypt_prompt_encrypted(mocker):
-    mocker.patch(builtin('open'), lambda *_: io.StringIO(PEM_ENCRYPTED))
+    mocker.patch(builtin('open'), lambda *_: io.BytesIO(PEM_ENCRYPTED.encode('utf-8')))
 
     # Load with correct password
     mocker.patch('getpass.getpass', lambda *_: u'password')
